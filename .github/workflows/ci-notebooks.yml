@@ -1,0 +1,115 @@
+name: CI — Notebooks & Python
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "*.ipynb"
+      - "*.py"
+      - "requirements.txt"
+      - ".github/workflows/ci-notebooks.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "*.ipynb"
+      - "*.py"
+      - "requirements.txt"
+      - ".github/workflows/ci-notebooks.yml"
+
+jobs:
+  validate:
+    name: Validate Notebooks & Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install base dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install nbformat ruff
+
+      - name: Install PyTorch (CPU)
+        run: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Validate notebook JSON structure
+        run: |
+          python -c "
+          import nbformat, glob, sys
+          errors = []
+          for nb_path in glob.glob('*.ipynb'):
+              try:
+                  with open(nb_path) as f:
+                      nb = nbformat.read(f, as_version=4)
+                  print(f'  ✅ {nb_path} — {len(nb.cells)} cells')
+              except Exception as e:
+                  errors.append(f'{nb_path}: {e}')
+                  print(f'  ❌ {nb_path} — {e}')
+          if errors:
+              print(f'\n{len(errors)} notebook(s) have invalid JSON')
+              sys.exit(1)
+          print('\nAll notebooks valid')
+          "
+
+      - name: Lint Python cells with Ruff
+        run: |
+          python -c "
+          import nbformat, glob, tempfile, subprocess, sys
+
+          exit_code = 0
+          for nb_path in glob.glob('*.ipynb'):
+              with open(nb_path) as f:
+                  nb = nbformat.read(f, as_version=4)
+
+              code_cells = [c for c in nb.cells if c.cell_type == 'code']
+              if not code_cells:
+                  continue
+
+              combined = '\n\n'.join(c.source for c in code_cells)
+
+              with tempfile.NamedTemporaryFile(suffix='.py', mode='w', delete=False) as tmp:
+                  tmp.write(combined)
+                  tmp_path = tmp.name
+
+              result = subprocess.run(
+                  ['ruff', 'check', '--select', 'E,F', '--ignore', 'E402,F401,E501,F811,E741', tmp_path],
+                  capture_output=True, text=True
+              )
+
+              if result.returncode != 0:
+                  print(f'⚠️  {nb_path}:')
+                  for line in result.stdout.strip().split('\n')[:10]:
+                      print(f'    {line}')
+                  exit_code = 1
+              else:
+                  print(f'✅ {nb_path} — clean')
+
+          sys.exit(exit_code)
+          "
+
+      - name: Check imports resolve
+        run: |
+          python -c "
+          import importlib, sys
+          required = [
+              'pandas', 'numpy', 'pyarrow', 'torch', 'sklearn',
+              'matplotlib', 'seaborn', 'geopandas', 'xarray', 'shap',
+          ]
+          failed = []
+          for mod in required:
+              try:
+                  importlib.import_module(mod)
+                  print(f'  ✅ {mod}')
+              except ImportError as e:
+                  failed.append(mod)
+                  print(f'  ❌ {mod}: {e}')
+          if failed:
+              print(f'\n{len(failed)} module(s) failed to import')
+              sys.exit(1)
+          print('\nAll imports OK')
+          "
