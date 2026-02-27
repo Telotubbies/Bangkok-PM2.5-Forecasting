@@ -234,15 +234,47 @@ Training sequences       0          0         0       ⛔ BLOCKED
 
 ## Environment
 
-| Component | Version |
-|-----------|---------|
-| Python | 3.12 |
-| PyTorch | 2.8.0+rocm7.0.2 |
-| GPU | AMD Radeon RX 7800 XT (16 GB VRAM, gfx1101) |
-| ROCm | 7.0.1 |
-| Jupyter kernel | `bkk-pm25` ("Python (bkk-pm25 ROCm)") |
+Notebooks auto-detect the best available accelerator: **CUDA/ROCm > Apple MPS > CPU**.
 
-## Quick Start
+### Tested Platforms
+
+| Platform | GPU | PyTorch | Backend | Status |
+|----------|-----|---------|---------|--------|
+| **Linux (primary)** | AMD Radeon RX 7800 XT (16 GB) | 2.8.0+rocm7.0.2 | ROCm 7.0 | Tested |
+| **macOS (secondary)** | Apple M5 Pro/Max (unified memory) | latest stable | MPS (Metal) | Supported |
+| **Linux/Windows** | NVIDIA GPU | latest stable | CUDA | Supported |
+| **Any** | — | latest stable | CPU | Supported (slow) |
+
+### Setup — Linux (AMD ROCm)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+# PyTorch ROCm: download wheels from https://repo.radeon.com/rocm/manylinux/
+pip install torch-*.whl torchvision-*.whl torchaudio-*.whl
+```
+
+### Setup — macOS (Apple Silicon M5)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install torch torchvision torchaudio
+# MPS backend is included in official PyTorch for macOS ARM64
+```
+
+### Setup — Linux/Windows (NVIDIA CUDA)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+```
+
+### Run
 
 ```bash
 source .venv/bin/activate
