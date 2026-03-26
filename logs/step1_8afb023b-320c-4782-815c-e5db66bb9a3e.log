@@ -1,5 +1,0 @@
-2026-02-22 01:58:18 [INFO] Directories initialized.
-2026-02-22 01:58:18 [WARNING] No Bangkok stations found from Air4Thai.
-2026-02-22 01:58:18 [ERROR] No stations; run save_station_metadata() first.
-2026-02-22 01:58:18 [WARNING] No Silver Parquet found under c:\Users\natni\Desktop\01_pm25_data_ingestion\data\silver\openmeteo_weather
-2026-02-22 01:58:18 [WARNING] No Silver Parquet found under c:\Users\natni\Desktop\01_pm25_data_ingestion\data\silver\openmeteo_airquality
