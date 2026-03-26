@@ -1,0 +1,50 @@
+# STC-HGAT Model Configuration
+# Yang & Peng (2024) adapted for PM2.5 forecasting
+
+model_name: "STC-HGAT"
+paper: "Spatio-Temporal Contrastive HGAT — Mathematics 12(8), 1193"
+
+# ── Architecture ─────────────────────────────────────────────────────────────
+in_channels: 50          # input features per timestep
+hidden: 128              # embedding dimension
+n_regions: 5             # geographic region nodes (North/NE/Central/East/South)
+hypergat_layers: 2       # HyperGAT layers (paper: l layers)
+seq_len: 7               # lookback window (days)
+dropout: 0.1
+
+# ── Loss function ─────────────────────────────────────────────────────────────
+contrastive_lambda: 0.1  # λ in L = L_r + λ·L_c  (paper Eq.20)
+aw_gamma: 2.0            # γ focal exponent in AW loss (paper Eq.19)
+extreme_threshold: 2.0   # normalised PM2.5 threshold for upweighting
+
+# ── Graph construction ────────────────────────────────────────────────────────
+graph:
+  spatial_thresholds_km: [50.0, 100.0, 200.0]   # multi-scale hyperedges
+  spatial_edge_km: 150.0                          # base spatial edges
+  corr_threshold: 0.70                            # semantic edges
+  wind_top_k: 3                                   # downwind edges
+
+# ── Training ──────────────────────────────────────────────────────────────────
+epochs: 100
+batch_size: 8
+lr: 0.001
+weight_decay: 0.0001
+patience: 15
+grad_clip: 1.0
+device: "cuda"
+
+# ── Scheduler ─────────────────────────────────────────────────────────────────
+scheduler: "ReduceLROnPlateau"
+scheduler_factor: 0.5
+scheduler_patience: 5
+
+# ── Evaluation thresholds ─────────────────────────────────────────────────────
+performance_thresholds:
+  RMSE: 16.0
+  MAE: 9.0
+  R2: 0.85    # target > 0.9
+
+# ── MLflow ────────────────────────────────────────────────────────────────────
+mlflow:
+  experiment_name: "pm25_stc_hgat"
+  run_name: "stc_hgat_v1"
