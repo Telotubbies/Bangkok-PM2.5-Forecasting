@@ -546,6 +546,11 @@ class STCHGAT(nn.Module):
         instead of H_inc and membership. The model will use simplified processing.
         """
         B, N, T, F = x.shape
+        
+        # Debug: print shapes on first call
+        if not hasattr(self, '_debug_printed'):
+            print(f"[Model Debug] Input x shape: {x.shape} (B={B}, N={N}, T={T}, F={F})")
+            self._debug_printed = True
 
         # ── Feature embedding ───────────────────────────────────────────────
         x_flat  = x.reshape(B * N * T, F)
