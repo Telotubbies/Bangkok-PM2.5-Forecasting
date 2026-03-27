@@ -29,3 +29,25 @@ seaborn>=0.13.0
 
 # --- Jupyter ---
 ipykernel>=7.0.0
+
+# --- Data Version Control ---
+dvc>=3.0.0
+dvc-s3>=3.0.0
+
+# --- Experiment Tracking ---
+mlflow>=2.10.0
+optuna>=3.5.0
+optuna-integration>=3.5.0
+
+# --- Testing ---
+pytest>=8.0.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+pytest-benchmark>=4.0.0
+
+# --- Development Tools ---
+black>=24.0.0
+flake8>=7.0.0
+mypy>=1.8.0
+pre-commit>=3.6.0
+pyyaml>=6.0.0

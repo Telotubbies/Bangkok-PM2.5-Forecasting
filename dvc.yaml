@@ -1,0 +1,75 @@
+stages:
+  prepare_data:
+    cmd: python src/data/dataset.py --params params.yaml
+    deps:
+      - data/bronze
+      - data/silver
+      - data/stations
+      - src/data/dataset.py
+    params:
+      - data.train_ratio
+      - data.val_ratio
+      - data.sequence_length
+      - data.forecast_horizons
+    outs:
+      - data/processed/train.pt
+      - data/processed/val.pt
+      - data/processed/test.pt
+      - data/processed/scaler.pkl
+    metrics:
+      - data/processed/data_stats.json:
+          cache: false
+
+  build_graphs:
+    cmd: python src/utils/graph_builder.py --params params.yaml
+    deps:
+      - data/stations/bangkok_stations.parquet
+      - src/utils/graph_builder.py
+    params:
+      - graph.spatial_threshold_km
+      - graph.correlation_threshold
+      - graph.num_regions
+      - graph.seasonal_pattern
+    outs:
+      - data/processed/spatial_graph.pt
+      - data/processed/temporal_graph.pt
+      - data/processed/region_embeddings.pt
+
+  train_model:
+    cmd: python src/train.py --params params.yaml
+    deps:
+      - data/processed/train.pt
+      - data/processed/val.pt
+      - data/processed/spatial_graph.pt
+      - data/processed/temporal_graph.pt
+      - src/models/stc_hgat_model.py
+      - src/train.py
+    params:
+      - model
+      - training
+      - loss
+    outs:
+      - models/stc_hgat_best.pt
+    metrics:
+      - metrics/train_metrics.json:
+          cache: false
+    plots:
+      - plots/training_curves.csv:
+          x: epoch
+          y: loss
+
+  evaluate_model:
+    cmd: python src/evaluate.py --params params.yaml
+    deps:
+      - data/processed/test.pt
+      - models/stc_hgat_best.pt
+      - src/evaluate.py
+    outs:
+      - results/predictions.csv
+    metrics:
+      - metrics/test_metrics.json:
+          cache: false
+    plots:
+      - plots/predictions_vs_actual.csv:
+          x: actual
+          y: predicted
