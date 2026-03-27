@@ -441,3 +441,132 @@ class GraphBuilder:
             f"Regions        : {graphs['n_regions']} ({', '.join(graphs['region_names'])})",
         ]
         return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# 9. Simplified wrapper functions for notebook usage
+# ---------------------------------------------------------------------------
+
+def build_spatial_hypergraph(
+    stations_df,
+    threshold_km: float = 150.0,
+    num_regions: int = 5,
+) -> Dict[str, Tensor]:
+    """
+    Simplified wrapper to build spatial hypergraph from station DataFrame.
+    
+    Parameters
+    ----------
+    stations_df : DataFrame with columns ['stationID', 'lat', 'lon']
+    threshold_km : Distance threshold for spatial edges
+    num_regions : Number of geographic regions
+    
+    Returns
+    -------
+    dict with keys:
+        'edge_index' or 'hyperedge_index' : spatial connections
+        'num_nodes' : number of stations
+    """
+    lats = stations_df['lat'].values
+    lons = stations_df['lon'].values
+    station_ids = stations_df['stationID'].tolist()
+    
+    # Build spatial edges
+    edge_index = build_spatial_edges(lats, lons, threshold_km)
+    
+    # Build hyperedges
+    dist_matrix = pairwise_distance_matrix(lats, lons)
+    hyperedges = build_hyperedges(dist_matrix, thresholds_km=(50.0, 100.0, 200.0))
+    
+    # Build region membership
+    membership, region_names = build_region_membership(station_ids)
+    
+    return {
+        'edge_index': edge_index,
+        'hyperedges': hyperedges,
+        'membership': torch.tensor(membership, dtype=torch.long),
+        'num_nodes': len(stations_df),
+        'num_regions': len(region_names),
+    }
+
+
+def build_temporal_graph(
+    num_days: int = 365,
+    seasonal_pattern: bool = True,
+) -> Dict[str, Tensor]:
+    """
+    Build temporal graph with sequential and optional seasonal edges.
+    
+    Parameters
+    ----------
+    num_days : Number of days (nodes in temporal graph)
+    seasonal_pattern : Whether to include seasonal (weekly) edges
+    
+    Returns
+    -------
+    dict with keys:
+        'edge_index' : temporal connections (2, E)
+        'num_nodes' : number of temporal nodes
+    """
+    # Sequential edges: day i -> day i+1
+    seq_src = list(range(num_days - 1))
+    seq_dst = list(range(1, num_days))
+    
+    # Seasonal edges: weekly pattern (7-day cycles)
+    sea_src, sea_dst = [], []
+    if seasonal_pattern:
+        for i in range(num_days):
+            for j in range(i + 7, num_days, 7):
+                sea_src.extend([i, j])
+                sea_dst.extend([j, i])
+    
+    # Combine edges
+    all_src = seq_src + sea_src
+    all_dst = seq_dst + sea_dst
+    
+    edge_index = torch.tensor([all_src, all_dst], dtype=torch.long)
+    
+    return {
+        'edge_index': edge_index,
+        'num_nodes': num_days,
+        'num_edges': len(all_src),
+    }
+
+
+def compute_region_embeddings(
+    stations_df,
+    num_regions: int = 5,
+) -> Tensor:
+    """
+    Compute region embeddings from station locations.
+    
+    Parameters
+    ----------
+    stations_df : DataFrame with columns ['stationID', 'lat', 'lon']
+    num_regions : Number of regions
+    
+    Returns
+    -------
+    region_embeddings : Tensor (num_regions, 2) with [lat, lon] centroids
+    """
+    station_ids = stations_df['stationID'].tolist()
+    lats = stations_df['lat'].values
+    lons = stations_df['lon'].values
+    
+    # Build region membership
+    membership, region_names = build_region_membership(station_ids)
+    
+    # Compute region centroids
+    region_embeddings = []
+    for r in range(len(region_names)):
+        mask = membership == r
+        if mask.sum() > 0:
+            region_lat = lats[mask].mean()
+            region_lon = lons[mask].mean()
+        else:
+            # Default to Bangkok center if no stations in region
+            region_lat = 13.7563
+            region_lon = 100.5018
+        region_embeddings.append([region_lat, region_lon])
+    
+    return torch.tensor(region_embeddings, dtype=torch.float32)

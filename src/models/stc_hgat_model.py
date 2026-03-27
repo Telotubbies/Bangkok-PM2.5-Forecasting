@@ -39,7 +39,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-from src.data.graph_builder import compute_region_embeddings
+from src.utils.graph_builder import compute_region_embeddings
 
 
 # ===========================================================================

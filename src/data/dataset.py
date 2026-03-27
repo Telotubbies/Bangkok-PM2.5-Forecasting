@@ -249,9 +249,73 @@ class PM25GraphDataset(Dataset):
         return self.X[0].shape[2]
 
 
+class PM25SequenceDataset(Dataset):
+    """
+    Simple sequence dataset for multi-horizon PM2.5 forecasting.
+    
+    Used in notebooks for demo training with mock data.
+    Each sample: (X, y) where X is input sequence, y is multi-horizon targets.
+    """
+    
+    def __init__(
+        self,
+        data: torch.Tensor,
+        sequence_length: int = 7,
+        forecast_horizons: List[int] = [1, 3, 7]
+    ):
+        """
+        Parameters
+        ----------
+        data : Tensor of shape (T, N, F)
+            T = timesteps, N = stations, F = features
+        sequence_length : int
+            Number of past timesteps to use as input
+        forecast_horizons : List[int]
+            Future timesteps to predict (e.g., [1, 3, 7] for 1-day, 3-day, 7-day)
+        """
+        self.data = data
+        self.seq_len = sequence_length
+        self.horizons = forecast_horizons
+        self.max_horizon = max(forecast_horizons)
+        
+        # Valid indices where we have enough history and future
+        self.valid_indices = list(range(
+            sequence_length,
+            len(data) - self.max_horizon
+        ))
+    
+    def __len__(self) -> int:
+        return len(self.valid_indices)
+    
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Returns
+        -------
+        X : Tensor (seq_len, N, F)
+            Input sequence
+        y : Tensor (N, len(horizons))
+            Target values at each forecast horizon
+        """
+        t = self.valid_indices[idx]
+        
+        # Input: past seq_len timesteps
+        X = self.data[t - self.seq_len : t]  # (seq_len, N, F)
+        
+        # Targets: future values at each horizon
+        # Assume first feature is PM2.5
+        y_list = []
+        for h in self.horizons:
+            y_h = self.data[t + h - 1, :, 0]  # (N,) - PM2.5 at horizon h
+            y_list.append(y_h)
+        
+        y = torch.stack(y_list, dim=1)  # (N, len(horizons))
+        
+        return X, y
+
+
 def collate_fn(
-    batch: List[Tuple[Tensor, Tensor, Tensor]],
-) -> Tuple[Tensor, Tensor, Tensor]:
+    batch: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Stack variable-node batches (all have same N_fixed here)."""
     X    = torch.stack([b[0] for b in batch])   # (B, N, T, F)
     y    = torch.stack([b[1] for b in batch])   # (B, N)
