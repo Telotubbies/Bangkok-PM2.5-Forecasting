@@ -504,7 +504,8 @@ class STCHGAT(nn.Module):
         self.hgat = HGATModule(hidden, dropout=dropout)
 
         # Module III: Position encoding + soft attention
-        self.pos_enc = PositionalEncoding(hidden, max_len=seq_len)
+        # Use larger max_len to handle variable sequence lengths (default 100)
+        self.pos_enc = PositionalEncoding(hidden, max_len=max(seq_len, 100))
 
         # Module V: Prediction head
         self.head = nn.Sequential(
