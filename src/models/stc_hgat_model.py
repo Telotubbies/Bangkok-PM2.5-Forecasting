@@ -302,6 +302,11 @@ class PositionalEncoding(nn.Module):
         s : (B, N, H)  session representation via soft attention
         """
         B, N, T, H = h.shape
+        
+        # Debug: print shapes on first call
+        if not hasattr(self, '_debug_printed'):
+            print(f"[PosEnc Debug] Input h shape: {h.shape} (B={B}, N={N}, T={T}, H={H})")
+            self._debug_printed = True
 
         # Reversed position encoding
         pos = self.pe[:T].flip(0)                          # (T, H) reversed
@@ -314,6 +319,12 @@ class PositionalEncoding(nn.Module):
         rho   = (p_exp * (self.W5(h_star) + self.W6(h))).sum(-1)     # (B,N,T)
         rho   = F.softmax(rho, dim=2)
         s     = (rho.unsqueeze(-1) * h).sum(2)            # (B, N, H)
+        
+        # Debug output shape
+        if hasattr(self, '_debug_printed') and not hasattr(self, '_debug_output_printed'):
+            print(f"[PosEnc Debug] Output s shape: {s.shape}")
+            self._debug_output_printed = True
+            
         return s
 
 
