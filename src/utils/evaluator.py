@@ -56,3 +56,11 @@ def evaluate_all(y_true, y_pred) -> Dict[str, float]:
         "SMAPE": compute_smape(yt, yp),
         "MBE":   compute_mbe(yt, yp),
     }
+
+
+# Aliases for notebook compatibility
+calculate_mae = compute_mae
+calculate_rmse = compute_rmse
+calculate_r2 = compute_r2
+calculate_smape = compute_smape
+calculate_mbe = compute_mbe
