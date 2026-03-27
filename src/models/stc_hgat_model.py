@@ -460,8 +460,28 @@ class STCHGAT(nn.Module):
         contrastive_lambda:  float = 0.1,
         aw_gamma:            float = 2.0,
         extreme_threshold:   float = 2.0,
+        # Notebook compatibility aliases
+        num_features:        int   = None,
+        hidden_dim:          int   = None,
+        num_stations:        int   = None,
+        num_regions:         int   = None,
+        num_hypergat_layers: int   = None,
+        num_hgat_layers:     int   = None,
+        num_heads:           int   = None,
+        forecast_horizons:   list  = None,
     ):
         super().__init__()
+        
+        # Handle notebook-style parameter aliases
+        if num_features is not None:
+            in_channels = num_features
+        if hidden_dim is not None:
+            hidden = hidden_dim
+        if num_regions is not None:
+            n_regions = num_regions
+        if num_hypergat_layers is not None:
+            hypergat_layers = num_hypergat_layers
+        
         self.hidden             = hidden
         self.contrastive_lambda = contrastive_lambda
         self.aw_gamma           = aw_gamma
