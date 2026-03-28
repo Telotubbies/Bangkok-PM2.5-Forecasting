@@ -283,7 +283,8 @@ def compute_fire_features(
     fire_lag3d = np.zeros((T, N))
     
     # Convert timestamps to daily resolution for fire data
-    timestamps_daily = pd.to_datetime(timestamps.date)
+    timestamps_pd = pd.to_datetime(timestamps)
+    timestamps_daily = timestamps_pd.normalize()  # Remove time component, keep dates
     unique_dates = timestamps_daily.unique()
     
     print(f"  Processing {len(unique_dates)} unique dates...")
@@ -292,32 +293,54 @@ def compute_fire_features(
     fire_df['date'] = pd.to_datetime(fire_df['timestamp_utc'].dt.date)
     fires_by_date = fire_df.groupby('date')
     
+    # Vectorized computation - much faster!
+    print(f"  Using vectorized computation for speed...")
+    
+    # Pre-compute all fire locations as arrays
+    fire_lats = fire_df['latitude'].values
+    fire_lons = fire_df['longitude'].values
+    fire_frps = fire_df['frp'].values
+    fire_dates = fire_df['date'].values
+    
     # Process each station
     for station_idx, station in stations_df.iterrows():
+        if station_idx % 10 == 0:
+            print(f"    Processing station {station_idx+1}/{N}...")
+        
         station_lat = station['lat']
         station_lon = station['lon']
         
+        # Vectorized distance calculation for ALL fires at once
+        from math import radians, cos, sin, asin, sqrt
+        
+        # Convert to radians
+        lat1, lon1 = radians(station_lat), radians(station_lon)
+        lat2, lon2 = np.radians(fire_lats), np.radians(fire_lons)
+        
+        # Haversine formula (vectorized)
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = np.sin(dlat/2)**2 + cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
+        c = 2 * np.arcsin(np.sqrt(a))
+        distances = 6371 * c  # km
+        
+        # Vectorized bearing calculation
+        x = np.sin(dlon) * np.cos(lat2)
+        y = cos(lat1) * np.sin(lat2) - sin(lat1) * np.cos(lat2) * np.cos(dlon)
+        bearings = (np.degrees(np.arctan2(x, y)) + 360) % 360
+        
         # Process each date
         for date_idx, date in enumerate(unique_dates):
-            # Get fires for this date
-            if date not in fires_by_date.groups:
+            # Get fires for this date (vectorized mask)
+            date_mask_fires = fire_dates == date
+            
+            if not date_mask_fires.any():
                 continue
             
-            fires_today = fires_by_date.get_group(date)
-            
-            if len(fires_today) == 0:
-                continue
-            
-            # Calculate distance and bearing for each fire
-            fires_today = fires_today.copy()
-            fires_today['dist_to_station'] = fires_today.apply(
-                lambda row: haversine_distance(station_lon, station_lat, row['longitude'], row['latitude']),
-                axis=1
-            )
-            fires_today['bearing_to_fire'] = fires_today.apply(
-                lambda row: calculate_bearing(station_lon, station_lat, row['longitude'], row['latitude']),
-                axis=1
-            )
+            # Get fires for today
+            dists_today = distances[date_mask_fires]
+            bearings_today = bearings[date_mask_fires]
+            frps_today = fire_frps[date_mask_fires]
             
             # Get wind data for this station and date (if available)
             wind_direction = 0.0  # Default
@@ -335,56 +358,52 @@ def compute_fire_features(
                         wind_direction = weather_data[date_indices, station_idx, 4].mean().item()
                         wind_speed = weather_data[date_indices, station_idx, 3].mean().item()
             
-            # Compute features
-            for fire_idx, fire in fires_today.iterrows():
-                dist = fire['dist_to_station']
-                frp = fire['frp']
-                bearing = fire['bearing_to_fire']
-                
-                # Distance weight
-                dist_w = distance_weight(dist)
-                
-                # Wind angle weight
-                wind_w = wind_angle_weight(wind_direction, bearing)
-                
-                # Aggregate features for this date
-                date_mask = timestamps_daily == date
-                date_indices = np.where(date_mask)[0]
-                
-                for t_idx in date_indices:
-                    # Feature 1: Fire count
-                    fire_count[t_idx, station_idx] += 1
-                    
-                    # Feature 2: Total FRP
-                    fire_frp_total[t_idx, station_idx] += frp
-                    
-                    # Feature 3: Upwind fire impact (wind-weighted)
-                    upwind_fire_impact[t_idx, station_idx] += frp * wind_w * dist_w
-                    
-                    # Feature 4: Distance-weighted fire intensity
-                    fire_distance_weighted[t_idx, station_idx] += frp * dist_w
-                
-                # Temporal lag features
-                lag1_days = get_adaptive_lag_days(dist, max_lag=1)
-                lag3_days = get_adaptive_lag_days(dist, max_lag=3)
-                
-                # Apply lag
-                lag1_date = date + pd.Timedelta(days=lag1_days)
-                lag3_date = date + pd.Timedelta(days=lag3_days)
-                
-                # Feature 5: 1-day lag
-                if lag1_date in unique_dates:
-                    lag1_mask = timestamps_daily == lag1_date
-                    lag1_indices = np.where(lag1_mask)[0]
-                    for t_idx in lag1_indices:
-                        fire_lag1d[t_idx, station_idx] += frp * wind_w * dist_w
-                
-                # Feature 6: 3-day lag
-                if lag3_date in unique_dates:
-                    lag3_mask = timestamps_daily == lag3_date
-                    lag3_indices = np.where(lag3_mask)[0]
-                    for t_idx in lag3_indices:
-                        fire_lag3d[t_idx, station_idx] += frp * wind_w * dist_w
+            # Vectorized feature computation (much faster!)
+            # Distance weights (vectorized)
+            dist_weights = 1.0 / np.maximum(dists_today, 10.0)**2
+            
+            # Wind angle weights (vectorized)
+            angle_diffs = np.abs(wind_direction - bearings_today)
+            angle_diffs = np.where(angle_diffs > 180, 360 - angle_diffs, angle_diffs)
+            wind_weights = np.where(angle_diffs <= 90, np.cos(np.radians(angle_diffs)), 0.0)
+            
+            # Get timestep indices for this date
+            date_mask = timestamps_daily == date
+            date_indices = np.where(date_mask)[0]
+            
+            # Aggregate features (vectorized sums)
+            n_fires = len(dists_today)
+            total_frp = frps_today.sum()
+            upwind_impact = (frps_today * wind_weights * dist_weights).sum()
+            dist_weighted = (frps_today * dist_weights).sum()
+            
+            # Apply to all timesteps for this date
+            for t_idx in date_indices:
+                fire_count[t_idx, station_idx] = n_fires
+                fire_frp_total[t_idx, station_idx] = total_frp
+                upwind_fire_impact[t_idx, station_idx] = upwind_impact
+                fire_distance_weighted[t_idx, station_idx] = dist_weighted
+            
+            # Temporal lag features (simplified - use same impact for all fires on this day)
+            # This is much faster than computing individual lags
+            avg_dist = dists_today.mean() if len(dists_today) > 0 else 0
+            lag1_days = min(int(avg_dist / 200), 1)
+            lag3_days = min(int(avg_dist / 200), 3)
+            
+            lag1_date = date + pd.Timedelta(days=lag1_days)
+            lag3_date = date + pd.Timedelta(days=lag3_days)
+            
+            if lag1_date in unique_dates:
+                lag1_mask = timestamps_daily == lag1_date
+                lag1_indices = np.where(lag1_mask)[0]
+                for t_idx in lag1_indices:
+                    fire_lag1d[t_idx, station_idx] = upwind_impact
+            
+            if lag3_date in unique_dates:
+                lag3_mask = timestamps_daily == lag3_date
+                lag3_indices = np.where(lag3_mask)[0]
+                for t_idx in lag3_indices:
+                    fire_lag3d[t_idx, station_idx] = upwind_impact
     
     # Stack features
     fire_features = np.stack([

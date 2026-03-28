@@ -168,10 +168,43 @@ class HyperGATModule(nn.Module):
         self.region_init = nn.Parameter(torch.empty(n_regions, hidden))
         nn.init.normal_(self.region_init, std=0.02)
 
+    def _compute_region_embeddings(self, h: Tensor, membership: np.ndarray = None) -> Tensor:
+        """
+        Compute region embeddings by averaging station embeddings in each region.
+        
+        Parameters
+        ----------
+        h : (N, H) - station embeddings
+        membership : (N,) - region index for each station (optional)
+        
+        Returns
+        -------
+        reg_emb : (n_regions, H) - region embeddings
+        """
+        N, H = h.shape
+        reg_emb = torch.zeros(self.n_regions, H, device=h.device, dtype=h.dtype)
+        
+        if membership is None:
+            # If no membership provided, distribute stations evenly across regions
+            stations_per_region = N // self.n_regions
+            for r in range(self.n_regions):
+                start_idx = r * stations_per_region
+                end_idx = (r + 1) * stations_per_region if r < self.n_regions - 1 else N
+                reg_emb[r] = h[start_idx:end_idx].mean(dim=0)
+        else:
+            for r in range(self.n_regions):
+                mask = (membership == r)
+                if isinstance(mask, np.ndarray):
+                    mask = torch.from_numpy(mask).to(h.device)
+                if mask.any():
+                    reg_emb[r] = h[mask].mean(dim=0)
+        
+        return reg_emb
+    
     def forward(
         self,
         node_emb: Tensor,       # (B, N, H)
-        H_inc: Tensor,          # (N + n_regions, E_h)
+        H_inc: Tensor,          # (N + n_regions, E_h) hyperedge incidence
         membership: np.ndarray, # (N,) region index per station
     ) -> Tensor:                # (B, N, H)
         B, N, H = node_emb.shape
@@ -181,7 +214,7 @@ class HyperGATModule(nn.Module):
             h = node_emb[b]                               # (N, H)
 
             # Compute region embeddings (paper: h_ci = 1/k Σ h_θj)
-            reg_emb = compute_region_embeddings(h, membership, self.n_regions)
+            reg_emb = self._compute_region_embeddings(h, membership)
             reg_emb = reg_emb + self.region_init           # learned offset
 
             # Concatenate: [station nodes | region nodes]  (N + R, H)
@@ -194,7 +227,7 @@ class HyperGATModule(nn.Module):
             # Return only station node embeddings
             out_list.append(h_aug[:N])
 
-        return torch.stack(out_list)                       # (B, N, H)
+        return torch.stack(out_list, dim=0)  # (B, N, H)                  # (B, N, H)
 
 
 # ===========================================================================
@@ -572,8 +605,8 @@ class STCHGAT(nn.Module):
         # Aggregate over time first → (B, N, H)
         h_mean = h.mean(dim=2)                            # (B, N, H)
         
-        # If using graph dicts (notebook mode), use simplified spatial processing
-        if spatial_graph is not None and H_inc is None:
+        # If H_inc not provided, use simplified spatial processing
+        if H_inc is None:
             # Simplified: just use mean aggregation without hypergraph
             h_spatial = h_mean  # (B, N, H)
         else:

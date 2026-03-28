@@ -99,8 +99,7 @@ class SessionSTCHGAT(nn.Module):
         if use_multiscale_temporal:
             self.multiscale_temporal = MultiScaleTemporalBlock(
                 hidden_dim=hidden_dim,
-                kernel_sizes=[1, 3, 7],
-                dropout=dropout
+                scales=[1, 3, 7]
             )
         
         # Fusion module
@@ -195,10 +194,13 @@ class SessionSTCHGAT(nn.Module):
         
         # Cross-attention (Phase 3)
         if self.use_cross_attention:
-            h_fused = self.cross_attn(h_spatial, h_temporal)
+            h_fused = self.cross_attn(h_spatial, h_temporal, h_temporal)
         
-        # Position encoding with soft attention
-        h_final = self.pos_encoding(h, h_fused)  # (B, N, H)
+        # Position encoding - reshape h_fused to (B, N, T, H) for PositionalEncoding
+        # h_fused is (B, N, H), need to add time dimension
+        B, N, H_dim = h_fused.shape
+        h_fused_expanded = h_fused.unsqueeze(2).expand(B, N, h.shape[2], H_dim)  # (B, N, T, H)
+        h_final = self.pos_encoding(h_fused_expanded)  # (B, N, H)
         
         # Output projection
         pred = self.output_proj(h_final).squeeze(-1)  # (B, N)
